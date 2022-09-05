@@ -21,8 +21,8 @@ print(f'The wave period is {2*pi/omega} s')
 '''
 Create mesh and define function space
 '''
-Wx,Nx,Ny = 5000,500,32
-x_ice_front = Wx/2
+Wx,Nx,Ny = 20000,2000,32
+x_ice_front = Wx/4
 mesh = RectangleMesh(Point(0., 0.), Point(Wx, H), Nx, Ny)
 Hi = H
 Hc = H/2
@@ -158,7 +158,7 @@ fig,ax=plt.subplots(2,1,figsize=(10,10))
 
 plt.subplot(2,1,1)
 dispamp= project( uu[0]**2 + uu[1]**2, FunctionSpace(mesh, 'P', 1))
-c=plot(dispamp)
+c=plot(uu[1]*1e6)
 plt.colorbar(c,orientation="horizontal")
 
 plt.subplot(2,1,2)
