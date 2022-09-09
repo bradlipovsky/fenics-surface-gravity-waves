@@ -152,18 +152,23 @@ s = Function(W)
 solve(A, s.vector(), b)
 pp,uu = split(s)
 
-# Plot solution
-import matplotlib.pyplot as plt
-fig,ax=plt.subplots(2,1,figsize=(10,10))
-
-plt.subplot(2,1,1)
-dispamp= project( uu[0]**2 + uu[1]**2, FunctionSpace(mesh, 'P', 1))
-c=plot(uu[1]*1e6)
-plt.colorbar(c,orientation="horizontal")
-
-plt.subplot(2,1,2)
-scale = 10
-cc=plot(pp,cmap='seismic',vmin=-scale,vmax=scale)
-plt.colorbar(cc,orientation="horizontal")
-plt.tight_layout()
-plt.savefig('figures/poisson.png')
+writevtk = True
+if writevtk:
+	file = File("poisson.pvd")
+	file << s
+else:
+	# Plot solution
+	import matplotlib.pyplot as plt
+	fig,ax=plt.subplots(2,1,figsize=(10,10))
+	
+	plt.subplot(2,1,1)
+	dispamp= project( uu[0]**2 + uu[1]**2, FunctionSpace(mesh, 'P', 1))
+	c=plot(uu[1]*1e6)
+	plt.colorbar(c,orientation="horizontal")
+	
+	plt.subplot(2,1,2)
+	scale = 10
+	cc=plot(pp,cmap='seismic',vmin=-scale,vmax=scale)
+	plt.colorbar(cc,orientation="horizontal")
+	plt.tight_layout()
+	plt.savefig('figures/poisson.png')
