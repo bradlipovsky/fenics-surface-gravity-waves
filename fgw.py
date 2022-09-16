@@ -1,17 +1,29 @@
-# Fenics script to do a harmonic analysis of surface gravity waves.
-
+'''
+Fenics script to do a harmonic analysis of surface gravity waves.
+'''
 from dolfin import *
 from numpy import sqrt,tanh,pi
+from time import perf_counter
 
+t0 = perf_counter()
 lmbda,mu = 8e9,3e9
 rho = 910
 rhof = 1010
 
+Wx = 1000
+Hw = 500
+Hi = 400
+Hc = Hw - (rho/rhof) * Hi
+Wx = 1000
+xf = Wx/4
+
 gravity = 9.8
 k = 2*pi/100
-H = 500
 A = 1
-omega = sqrt(gravity*k*tanh(k*H))
+omega = sqrt(gravity*k*tanh(k*Hw))
+
+
+
 print(f'The phase velocity is {omega/k} m/s')
 print(f'The wave length is {2*pi/k} m')
 print(f'The wave period is {2*pi/omega} s')
@@ -21,12 +33,20 @@ print(f'The wave period is {2*pi/omega} s')
 '''
 Create mesh and define function space
 '''
-Wx,Nx,Ny = 20000,2000,32
-x_ice_front = Wx/4
-mesh = RectangleMesh(Point(0., 0.), Point(Wx, H), Nx, Ny)
-Hi = H
-Hc = H/2
-#V = FunctionSpace(mesh, "Lagrange", 1)
+#from fenics import *
+#from mshr import *
+#print(f'Horizontal grid spacing is {Wx/Nx} m')
+# "MESH 1"
+#Nx,Ny = 6000,32
+#mesh = RectangleMesh( Point(0., 0.), Point(Wx, H), Nx, Ny)
+
+# "MESH 2"
+mesh = XDMFFile('mesh.xdmf')
+
+
+'''
+Variational problem
+'''
 V = FiniteElement("Lagrange", mesh.ufl_cell(), 1)
 Vv = VectorElement("Lagrange", mesh.ufl_cell(), 2)
 W = FunctionSpace(mesh, V*Vv)
@@ -36,17 +56,17 @@ TTF = TestFunction(W)
 (p, u) = split(TRF)
 (q, v) = split(TTF)
 
+
 ''' 
 Define the boundaries
 '''
 class IceInterface(SubDomain):
     def inside(self, x, on_boundary):
-        return (abs(x[0]-x_ice_front) < Wx/Nx/2) and (x[1] > Hc)\
-	       or (abs(x[1]-Hc) < H/Ny/2) and (x[0] > x_ice_front)
-
-#class IceBottom(SubDomain):
-#    def inside(self, x, on_boundary):
-#        return (abs(x[1]-Hc) < H/Ny/2) and (x[0] > x_ice_front)
+        return near(x[0],xf) and (x[1] >= Hc)\
+	       or near(x[1],Hc) and (x[0] >= xf)
+        #delta = 10
+        #return (abs(x[0]-xf) < delta) and (x[1] > Hc)\
+	#       or (abs(x[1]-Hc) < delta) and (x[0] > xf)
 
 def left_boundary(x):
     return near(x[0],0.0) 
@@ -59,7 +79,7 @@ def right_water_boundary(x):
 
 class water_surface(SubDomain):
     def inside(self, x, on_boundary):
-        return near(x[1], H) and (x[0]<x_ice_front) and on_boundary
+        return near(x[1], H) and (x[0]<xf) and on_boundary
 
 class water_bottom(SubDomain):
     def inside(self, x, on_boundary):
@@ -67,12 +87,11 @@ class water_bottom(SubDomain):
 
 class Ice(SubDomain):
     def inside(self, x, on_boundary):
-        return ( between(x[0], (x_ice_front, Wx)) and \
-	         between(x[1], (Hc, Hi)))
+        return ( x[0] > xf ) and (x[1]> Hc)
 
 #class ice_surface(SubDomain):
 #    def inside(self, x, on_boundary):
-#        return near(x[1], H) and (x[0]>x_ice_front) and on_boundary
+#        return near(x[1], H) and (x[0]>xf) and on_boundary
 
 ice = Ice()
 iceinterface = IceInterface()
@@ -149,12 +168,14 @@ b=assemble(L)
 for bc in bcs: bc.apply(A, b)
 A.ident_zeros()
 s = Function(W)
+print(f'Solve starting at t={perf_counter()-t0} s')
 solve(A, s.vector(), b)
 pp,uu = split(s)
+print(f'Solve finished at t={perf_counter()-t0} s')
 
 writevtk = True
 if writevtk:
-	file = File("poisson.pvd")
+	file = File("fgw-mesh-two.pvd")
 	file << s
 else:
 	# Plot solution
@@ -172,3 +193,4 @@ else:
 	plt.colorbar(cc,orientation="horizontal")
 	plt.tight_layout()
 	plt.savefig('figures/poisson.png')
+print(f'All done at t={perf_counter()-t0} s')
