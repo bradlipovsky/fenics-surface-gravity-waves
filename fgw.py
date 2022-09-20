@@ -1,35 +1,114 @@
 '''
 Fenics script to do a harmonic analysis of surface gravity waves.
 '''
-from dolfin import *
-import dolfin
-from numpy import sqrt,tanh,pi
+import numpy as np
 from time import perf_counter
+import gmsh # ellpsoid with holes
+import meshio
 
 t0 = perf_counter()
 lmbda,mu = 8e9,3e9
 rho = 910
 rhof = 1010
 
-Wx = 1000
+Wx = 50000
 Hw = 500
 Hi = 400
 Hc = Hw - (rho/rhof) * Hi
-Wx = 1000
 xf = Wx/4
 
 gravity = 9.8
-k = 2*pi/200
+k = 2*np.pi/200
 A = 1
-omega = sqrt(gravity*k*tanh(k*Hw))
+omega = np.sqrt(gravity*k*np.tanh(k*Hw))
 
 
 
 print(f'The phase velocity is {omega/k} m/s')
-print(f'The wave length is {2*pi/k} m')
-print(f'The wave period is {2*pi/omega} s')
+print(f'The wave length is {2*np.pi/k} m')
+print(f'The wave period is {2*np.pi/omega} s')
 
 
+
+
+gmsh.initialize()
+gmsh.option.setNumber("Mesh.MeshSizeMax", 50)
+
+gmsh.model.occ.addRectangle(xf, Hc, 0.0, (Wx-xf), Hi, tag=1)
+gmsh.model.occ.addRectangle(0.0,0.0,0.0,Wx,Hw, tag=2)
+gmsh.model.occ.fragment([(2,1)],[(2,2)])
+gmsh.model.occ.synchronize()
+
+# Label the surfaces (ice and water)
+solid_tag = []
+for surface in gmsh.model.getEntities(dim=2):
+    com = gmsh.model.occ.getCenterOfMass(surface[0], surface[1])
+    if np.isclose(com[0], Wx*.625):
+        solid_tag.append(surface[1])
+    else:
+        fluid_tag = surface[1]
+
+gmsh.model.addPhysicalGroup(2,[fluid_tag],1)
+gmsh.model.addPhysicalGroup(2,solid_tag,2)
+
+# Label boundaries
+ice_interface = []
+for edge in gmsh.model.getEntities(dim=1):
+    com = gmsh.model.occ.getCenterOfMass(edge[0], edge[1])
+    if np.isclose(com[1], Hw):
+        water_surface = [edge[1]]
+    elif np.isclose(com[0],xf):
+        print(com)
+        ice_interface.append(edge[1])
+    elif np.isclose(com[1],Hc):
+        print(com)
+        ice_interface.append(edge[1])
+    elif np.isclose(com[1],0.0):
+        water_bottom= [edge[1]]
+
+# Add physical entities
+print(water_surface)
+print(ice_interface)
+gmsh.model.addPhysicalGroup(1,water_surface,3)
+gmsh.model.addPhysicalGroup(1,ice_interface,4)
+gmsh.model.addPhysicalGroup(1,water_bottom,5)
+
+gmsh.model.mesh.generate(2)
+gmsh.write("mesh.msh")
+gmsh.finalize()
+
+'''
+Convert the mesh
+'''
+def create_mesh(mesh, cell_type, prune_z=False):
+    cells = mesh.get_cells_type(cell_type)
+    cell_data = mesh.get_cell_data("gmsh:physical", cell_type)
+    points = mesh.points[:, :2] if prune_z else mesh.points
+
+    out_mesh = meshio.Mesh(points=points,
+        cells={cell_type: cells},
+        cell_data={"name_to_read": [cell_data]})
+
+    return out_mesh
+
+mesh_from_file = meshio.read("mesh.msh")
+
+triangle_mesh = create_mesh(mesh_from_file, "triangle", prune_z=True)
+meshio.write("mesh.xdmf", triangle_mesh)
+
+line_mesh = create_mesh(mesh_from_file, "line", prune_z=True)
+meshio.write("facet_mesh.xdmf", line_mesh)
+
+print(f'Done with meshing at t={perf_counter()-t0} s')
+
+
+
+
+'''
+Solve the coupled system of PDEs.
+'''
+from dolfin import *
+import dolfin
 
 '''
 Read mesh and mark domains/boundaries
@@ -40,12 +119,12 @@ with XDMFFile("mesh.xdmf") as infile:
 
 mvc = MeshValueCollection("size_t", mesh, 2)
 with XDMFFile("mesh.xdmf") as infile:
-	infile.read(mesh)
+	infile.read(mvc)
 mf = cpp.mesh.MeshFunctionSizet(mesh, mvc)
 
 mvc2 = MeshValueCollection("size_t", mesh, 1)
 with XDMFFile("facet_mesh.xdmf") as infile:
-    infile.read(mvc2, "name_to_read")
+    infile.read(mvc2)
 mf2 = cpp.mesh.MeshFunctionSizet(mesh, mvc2)
 
 # Use dS when integrating over the interior boundaries
@@ -59,12 +138,6 @@ dXs = dx(subdomain_id=2)
 dst = ds(subdomain_id=3)
 dSi = dS(subdomain_id=4)
 dsb  = ds(subdomain_id=5)
-
-print('Computed area: ',assemble(Constant(1)*dXf))
-print('Computed area: ',assemble(Constant(1)*dXs))
-print('Computed length: ',assemble(Constant(1)*dst))
-print('Computed length: ',assemble(Constant(1)*dSi))
-print('Computed length: ',assemble(Constant(1)*dsb))
 
 '''
 Set up functional spaces 
