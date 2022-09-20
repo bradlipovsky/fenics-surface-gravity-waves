@@ -2,6 +2,7 @@
 Fenics script to do a harmonic analysis of surface gravity waves.
 '''
 from dolfin import *
+import dolfin
 from numpy import sqrt,tanh,pi
 from time import perf_counter
 
@@ -31,17 +32,34 @@ print(f'The wave period is {2*pi/omega} s')
 
 
 '''
-Create mesh and define function space
+Read mesh and mark domains/boundaries
 '''
-#from fenics import *
-#from mshr import *
-#print(f'Horizontal grid spacing is {Wx/Nx} m')
-# "MESH 1"
-#Nx,Ny = 6000,32
-#mesh = RectangleMesh( Point(0., 0.), Point(Wx, H), Nx, Ny)
+mesh = Mesh()
+with XDMFFile("mesh.xdmf") as infile:
+	infile.read(mesh)
+print("Read mesh")
 
-# "MESH 2"
-mesh = XDMFFile('mesh.xdmf')
+mvc = MeshValueCollection("size_t", mesh, 2)
+with XDMFFile("facet_mesh.xdmf") as infile:
+    infile.read(mvc, "name_to_read")
+print("Read facets")
+
+
+mf = cpp.mesh.MeshFunctionSizet(mesh, mvc)
+
+# Initialize mesh function for boundary domains
+boundaries = MeshFunction("size_t", mesh, mesh.topology().dim()-1,0)
+
+# Define the two domains
+domains = MeshFunction("size_t", mesh, mesh.topology().dim())
+
+# Use dS when integrating over the interior boundaries
+# Use ds for the exterior boundaries,
+# e.g.,  dS(1) for Γs and ds(0) for ∂B
+dS = Measure('dS', domain=mesh, subdomain_data=mf,subdomain_id=3)
+dX = Measure('dx', domain=mesh, subdomain_data=mf)
+ds = Measure('ds', domain=mesh, subdomain_data=mf,subdomain_id=2)
+
 
 
 '''
@@ -56,69 +74,34 @@ TTF = TestFunction(W)
 (p, u) = split(TRF)
 (q, v) = split(TTF)
 
-
-''' 
-Define the boundaries
 '''
-class IceInterface(SubDomain):
-    def inside(self, x, on_boundary):
-        return near(x[0],xf) and (x[1] >= Hc)\
-	       or near(x[1],Hc) and (x[0] >= xf)
-        #delta = 10
-        #return (abs(x[0]-xf) < delta) and (x[1] > Hc)\
-	#       or (abs(x[1]-Hc) < delta) and (x[0] > xf)
+=================
+Marked Areas
+==================
+Water       dX(0)
+Ice         dX(1)
 
-def left_boundary(x):
-    return near(x[0],0.0) 
-
-def right_ice_boundary(x):
-    return near(x[0],Wx) and (x[1] > Hc)
-
-def right_water_boundary(x):
-    return near(x[0],Wx) and (x[1] < Hc) 
-
-class water_surface(SubDomain):
-    def inside(self, x, on_boundary):
-        return near(x[1], H) and (x[0]<xf) and on_boundary
-
-class water_bottom(SubDomain):
-    def inside(self, x, on_boundary):
-        return near(x[1], 0.0) and on_boundary
-
-class Ice(SubDomain):
-    def inside(self, x, on_boundary):
-        return ( x[0] > xf ) and (x[1]> Hc)
-
-#class ice_surface(SubDomain):
-#    def inside(self, x, on_boundary):
-#        return near(x[1], H) and (x[0]>xf) and on_boundary
-
-ice = Ice()
-iceinterface = IceInterface()
-waterbottom = water_bottom()
-watersurface = water_surface()
-#icesurface = ice_surface()
-
-# Define the two domains
-domains = MeshFunction("size_t", mesh, mesh.topology().dim(), 0)
-domains.set_all(0)
-ice.mark(domains, 1)
-
-# Initialize mesh function for boundary domains
-boundaries = MeshFunction("size_t", mesh, mesh.topology().dim()-1,0)
-boundaries.set_all(0)
-watersurface.mark(boundaries, 2)
-iceinterface.mark(boundaries,3)
-waterbottom.mark(boundaries,4)
-#icesurface.mark(boundaries,5)
+=================
+Marked Boundaries
+=================
+Water Surface, 2
+Ice--Water Interface, 3
+'''
 
 # Define boundary conditions
 u0 = Constant(0.0)
 wavebc= Expression("A*omega/k*cosh(k*x[1])/sinh(k*H)",
-		A=A,g=gravity,omega=omega,k=k,H=H,degree=2)
+		A=A,g=gravity,omega=omega,k=k,H=Hw,degree=2)
 
 zero = Constant(0.0)
 zero_2d = Constant((0.0, 0.0))
+
+def left_boundary(x):
+    return near(x[0],0.0) 
+def right_ice_boundary(x):
+    return near(x[0],Wx) and (x[1] > Hc)
+def right_water_boundary(x):
+    return near(x[0],Wx) and (x[1] < Hc) 
 
 bcs = [ DirichletBC(W.sub(0), wavebc, left_boundary), 
 	DirichletBC(W.sub(1), zero_2d, right_ice_boundary),
@@ -127,28 +110,21 @@ bcs = [ DirichletBC(W.sub(0), wavebc, left_boundary),
 ''' 
 Define variational problem
 '''
-# Use dS when integrating over the interior boundaries
-# Use ds for the exterior boundaries,
-# e.g.,  dS(1) for Γs and ds(0) for ∂B
-dS = Measure('dS', domain=mesh, subdomain_data=boundaries)
-dX = Measure('dx', domain=mesh, subdomain_data=domains)
-ds = Measure('ds', domain=mesh, subdomain_data=boundaries)
-
 sigma = 2.0*mu*sym(grad(u)) \
 	+ lmbda*tr(sym(grad(u)))*Identity(u.geometric_dimension())
 n = FacetNormal(mesh)
 
 #Fluid domain
-a_f = inner(grad(p), grad(q))*dX(0) - omega**2/gravity*p*q*ds(2)
-L_f = zero*q*ds(4)
+a_f = inner(grad(p), grad(q))*dX(0) - omega**2/gravity*p*q*ds
+L_f = zero*q*ds
 
 #Solid domain
 a_s = (inner(sigma, grad(v)) - rho*omega**2*inner(u,v))*dX(1)
-L_s = inner(zero_2d,v )*ds(0)
+L_s = inner(zero_2d,v )*ds
 
 #Interface fluid-solid
 a_i = (rho*omega**2 * inner(n('+'), u('+')) * q('+')\
-	 - omega*rhof*p('+')*inner(n('+'), v('+')))*dS(3)
+	 - omega*rhof*p('+')*inner(n('+'), v('+')))*dS
 #a_i = (rho*omega**2 * inner(avg(n), u('+'))*avg(q) \
 #	 -omega*rhof* p('+')*inner(avg(n), v('+')))*dS(3)
 # L_i = zero*q('-')*dS(3)
@@ -156,7 +132,6 @@ a_i = (rho*omega**2 * inner(n('+'), u('+')) * q('+')\
 #Weak form
 a = a_f + a_s + a_i
 L = L_f + L_s
-
 
 ''' 
 Compute solution
@@ -175,7 +150,7 @@ print(f'Solve finished at t={perf_counter()-t0} s')
 
 writevtk = True
 if writevtk:
-	file = File("fgw-mesh-two.pvd")
+	file = File("fgw.pvd")
 	file << s
 else:
 	# Plot solution
