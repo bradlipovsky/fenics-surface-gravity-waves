@@ -9,13 +9,15 @@ Wx = 1000
 xf = Wx/4
 
 gmsh.initialize()
-water_rect_2 = gmsh.model.occ.addRectangle(xf,0.0,0.0,(Wx-xf),Hc, tag=1)
+#water_rect_2 = gmsh.model.occ.addRectangle(xf,0.0,0.0,(Wx-xf),Hc, tag=1)
+#ice_rect     = gmsh.model.occ.addRectangle(xf, Hc, 0.0, (Wx-xf), Hi, tag=2)
+#water_rect   = gmsh.model.occ.addRectangle(0.0, 0.0, 0.0, xf, Hw, tag=3)
+#gmsh.model.occ.fuse([(2,1)],[(2,3)],tag=4)
 ice_rect     = gmsh.model.occ.addRectangle(xf, Hc, 0.0, (Wx-xf), Hi, tag=2)
-water_rect   = gmsh.model.occ.addRectangle(0.0, 0.0, 0.0, xf, Hw, tag=3)
-gmsh.model.occ.fuse([(2,1)],[(2,3)],tag=4)
+water_rect   = gmsh.model.occ.addRectangle(0.0, 0.0, 0.0, Wx, Hw, tag=3)
+gmsh.model.occ.fragment([(2,2)],[(2,3)])
 gmsh.model.occ.synchronize()
 
-water, ice_lower, ice_upper = None, None, None
 # Label the surfaces (ice and water)
 for surface in gmsh.model.getEntities(dim=2):
     com = gmsh.model.occ.getCenterOfMass(surface[0], surface[1])
@@ -35,8 +37,10 @@ for edge in gmsh.model.getEntities(dim=1):
     if np.isclose(com[1], Hw):
         water_surface = [edge[1]]
     elif np.isclose(com[0],xf):
+        print(com)
         ice_interface.append(edge[1])
     elif np.isclose(com[1],Hc):
+        print(com)
         ice_interface.append(edge[1])
     elif np.isclose(com[1],0.0):
         water_bottom= [edge[1]]

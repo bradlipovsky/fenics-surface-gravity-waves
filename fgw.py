@@ -48,25 +48,26 @@ with XDMFFile("facet_mesh.xdmf") as infile:
     infile.read(mvc2, "name_to_read")
 mf2 = cpp.mesh.MeshFunctionSizet(mesh, mvc2)
 
-
-# Initialize mesh function for boundary domains
-#boundaries = MeshFunction("size_t", mesh, mesh.topology().dim()-1,0)
-
-# Define the two domains
-#domains = MeshFunction("size_t", mesh, mesh.topology().dim())
-
 # Use dS when integrating over the interior boundaries
 # Use ds for the exterior boundaries,
-dXf = Measure('dx', domain=mesh, subdomain_data=mf,subdomain_id=1)
-dXs = Measure('dx', domain=mesh, subdomain_data=mf,subdomain_id=2)
-ds  = Measure('ds', domain=mesh, subdomain_data=mf2,subdomain_id=3)
-dS  = Measure('dS', domain=mesh, subdomain_data=mf2,subdomain_id=4)
-dsb  = Measure('ds', domain=mesh, subdomain_data=mf2,subdomain_id=5)
+dx = Measure("dx", domain=mesh,subdomain_data=mf)
+ds = Measure("ds", domain=mesh, subdomain_data=mf2)
+dS = Measure("dS", domain=mesh, subdomain_data=mf2)
 
+dXf= dx(subdomain_id=1)
+dXs = dx(subdomain_id=2)
+dst = ds(subdomain_id=3)
+dSi = dS(subdomain_id=4)
+dsb  = ds(subdomain_id=5)
 
+print('Computed area: ',assemble(Constant(1)*dXf))
+print('Computed area: ',assemble(Constant(1)*dXs))
+print('Computed length: ',assemble(Constant(1)*dst))
+print('Computed length: ',assemble(Constant(1)*dSi))
+print('Computed length: ',assemble(Constant(1)*dsb))
 
 '''
-Variational problem
+Set up functional spaces 
 '''
 V = FiniteElement("Lagrange", mesh.ufl_cell(), 1)
 Vv = VectorElement("Lagrange", mesh.ufl_cell(), 2)
@@ -78,7 +79,9 @@ TTF = TestFunction(W)
 (q, v) = split(TTF)
 
 
-# Define boundary conditions
+'''
+Dirichlet boundary conditions
+'''
 u0 = Constant(0.0)
 wavebc= Expression("A*omega/k*cosh(k*x[1])/sinh(k*H)",
 		A=A,g=gravity,omega=omega,k=k,H=Hw,degree=2)
@@ -105,22 +108,26 @@ sigma = 2.0*mu*sym(grad(u)) \
 n = FacetNormal(mesh)
 
 #Fluid domain
-a_f = inner(grad(p), grad(q))*dXf - omega**2/gravity*p*q*ds
+a_f = inner(grad(p), grad(q))*dXf - omega**2/gravity*p*q*dst
 L_f = zero*q*dsb
 
 #Solid domain
 a_s = (inner(sigma, grad(v)) - rho*omega**2*inner(u,v))*dXs
-L_s = inner(zero_2d,v )*ds
+#L_s = inner(zero_2d,v )*ds
 
 #Interface fluid-solid
+#a_i = (rho*omega**2 * inner(n('-'), u('-')) * q('-')\
+#	 - omega*rhof*p('-')*inner(n('-'), v('-')))*dS
+
 a_i = (rho*omega**2 * inner(n('+'), u('+')) * q('+')\
-	 - omega*rhof*p('+')*inner(n('+'), v('+')))*dS
+	 - omega*rhof*p('+')*inner(n('+'), v('+')))*dSi
+
 #a_i = (rho*omega**2 * inner(avg(n), u('+'))*avg(q) \
 #	 -omega*rhof* p('+')*inner(avg(n), v('+')))*dS(3)
 # L_i = zero*q('-')*dS(3)
 
 #Weak form
-a = a_f #+ a_s + a_i
+a = a_f + a_s + a_i
 L = L_f #+ L_s
 
 ''' 
