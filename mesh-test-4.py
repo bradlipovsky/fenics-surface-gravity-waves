@@ -9,9 +9,9 @@ Wx = 1000
 xf = Wx/4
 
 gmsh.initialize()
-water_rect   = gmsh.model.occ.addRectangle(0.0, 0.0, 0.0, xf, Hw, tag=3)
 water_rect_2 = gmsh.model.occ.addRectangle(xf,0.0,0.0,(Wx-xf),Hc, tag=1)
 ice_rect     = gmsh.model.occ.addRectangle(xf, Hc, 0.0, (Wx-xf), Hi, tag=2)
+water_rect   = gmsh.model.occ.addRectangle(0.0, 0.0, 0.0, xf, Hw, tag=3)
 gmsh.model.occ.fuse([(2,1)],[(2,3)],tag=4)
 gmsh.model.occ.synchronize()
 
@@ -25,8 +25,8 @@ for surface in gmsh.model.getEntities(dim=2):
         ice = surface[1]
 
 # Add physical surfaces
-gmsh.model.addPhysicalGroup(2,[water],0)
-gmsh.model.addPhysicalGroup(2,[ice],1)
+gmsh.model.addPhysicalGroup(2,[water],1)
+gmsh.model.addPhysicalGroup(2,[ice],2)
 
 # Label boundaries
 ice_interface = []
@@ -38,12 +38,15 @@ for edge in gmsh.model.getEntities(dim=1):
         ice_interface.append(edge[1])
     elif np.isclose(com[1],Hc):
         ice_interface.append(edge[1])
+    elif np.isclose(com[1],0.0):
+        water_bottom= [edge[1]]
 
 # Add physical entities
 print(water_surface)
 print(ice_interface)
-gmsh.model.addPhysicalGroup(1,water_surface,2)
-gmsh.model.addPhysicalGroup(1,ice_interface,3)
+gmsh.model.addPhysicalGroup(1,water_surface,3)
+gmsh.model.addPhysicalGroup(1,ice_interface,4)
+gmsh.model.addPhysicalGroup(1,water_bottom,5)
 
 gmsh.option.setNumber("Mesh.MeshSizeMax", 5)
 

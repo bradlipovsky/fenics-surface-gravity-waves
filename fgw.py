@@ -19,7 +19,7 @@ Wx = 1000
 xf = Wx/4
 
 gravity = 9.8
-k = 2*pi/100
+k = 2*pi/200
 A = 1
 omega = sqrt(gravity*k*tanh(k*Hw))
 
@@ -37,28 +37,31 @@ Read mesh and mark domains/boundaries
 mesh = Mesh()
 with XDMFFile("mesh.xdmf") as infile:
 	infile.read(mesh)
-print("Read mesh")
 
 mvc = MeshValueCollection("size_t", mesh, 2)
-with XDMFFile("facet_mesh.xdmf") as infile:
-    infile.read(mvc, "name_to_read")
-print("Read facets")
-
-
+with XDMFFile("mesh.xdmf") as infile:
+	infile.read(mesh)
 mf = cpp.mesh.MeshFunctionSizet(mesh, mvc)
 
+mvc2 = MeshValueCollection("size_t", mesh, 1)
+with XDMFFile("facet_mesh.xdmf") as infile:
+    infile.read(mvc2, "name_to_read")
+mf2 = cpp.mesh.MeshFunctionSizet(mesh, mvc2)
+
+
 # Initialize mesh function for boundary domains
-boundaries = MeshFunction("size_t", mesh, mesh.topology().dim()-1,0)
+#boundaries = MeshFunction("size_t", mesh, mesh.topology().dim()-1,0)
 
 # Define the two domains
-domains = MeshFunction("size_t", mesh, mesh.topology().dim())
+#domains = MeshFunction("size_t", mesh, mesh.topology().dim())
 
 # Use dS when integrating over the interior boundaries
 # Use ds for the exterior boundaries,
-# e.g.,  dS(1) for Γs and ds(0) for ∂B
-dS = Measure('dS', domain=mesh, subdomain_data=mf,subdomain_id=3)
-dX = Measure('dx', domain=mesh, subdomain_data=mf)
-ds = Measure('ds', domain=mesh, subdomain_data=mf,subdomain_id=2)
+dXf = Measure('dx', domain=mesh, subdomain_data=mf,subdomain_id=1)
+dXs = Measure('dx', domain=mesh, subdomain_data=mf,subdomain_id=2)
+ds  = Measure('ds', domain=mesh, subdomain_data=mf2,subdomain_id=3)
+dS  = Measure('dS', domain=mesh, subdomain_data=mf2,subdomain_id=4)
+dsb  = Measure('ds', domain=mesh, subdomain_data=mf2,subdomain_id=5)
 
 
 
@@ -74,19 +77,6 @@ TTF = TestFunction(W)
 (p, u) = split(TRF)
 (q, v) = split(TTF)
 
-'''
-=================
-Marked Areas
-==================
-Water       dX(0)
-Ice         dX(1)
-
-=================
-Marked Boundaries
-=================
-Water Surface, 2
-Ice--Water Interface, 3
-'''
 
 # Define boundary conditions
 u0 = Constant(0.0)
@@ -115,11 +105,11 @@ sigma = 2.0*mu*sym(grad(u)) \
 n = FacetNormal(mesh)
 
 #Fluid domain
-a_f = inner(grad(p), grad(q))*dX(0) - omega**2/gravity*p*q*ds
-L_f = zero*q*ds
+a_f = inner(grad(p), grad(q))*dXf - omega**2/gravity*p*q*ds
+L_f = zero*q*dsb
 
 #Solid domain
-a_s = (inner(sigma, grad(v)) - rho*omega**2*inner(u,v))*dX(1)
+a_s = (inner(sigma, grad(v)) - rho*omega**2*inner(u,v))*dXs
 L_s = inner(zero_2d,v )*ds
 
 #Interface fluid-solid
@@ -130,8 +120,8 @@ a_i = (rho*omega**2 * inner(n('+'), u('+')) * q('+')\
 # L_i = zero*q('-')*dS(3)
 
 #Weak form
-a = a_f + a_s + a_i
-L = L_f + L_s
+a = a_f #+ a_s + a_i
+L = L_f #+ L_s
 
 ''' 
 Compute solution
