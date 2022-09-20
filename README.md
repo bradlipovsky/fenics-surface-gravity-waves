@@ -12,5 +12,5 @@ This code requires gmsh. I installed gmsh in the above-described docker containe
 ```
 sudo apt-get update -y
 sudo apt-get install -y python-gmsh
-pip install --user pygmsh
+pip install --user gmsh
 ```
